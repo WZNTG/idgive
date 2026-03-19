@@ -1,1 +1,1 @@
-aiogram
+pip install python-telegram-bot
