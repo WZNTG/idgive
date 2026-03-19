@@ -1,48 +1,71 @@
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.error import BadRequest
 
 BOT_TOKEN = "8360173852:AAFyU1VUZ9RpntjZeQC0cAiUJG8IJe4q6rU"  # Вставь сюда токен от @BotFather
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    chat = update.effective_chat
     text = (
         f"👋 Привет, {user.first_name}!\n\n"
-        f"🤖 *ID этого бота:* `{context.bot.id}`\n"
         f"🆔 *Твой ID:* `{user.id}`\n"
-        f"💬 *ID чата:* `{chat.id}`\n\n"
-        f"Перешли мне сообщение от другого пользователя, чтобы узнать его ID!"
+        f"👤 Имя: {user.full_name}\n"
+        f"📛 Username: @{user.username or 'не указан'}\n\n"
+        f"🔍 Используй /getid @username — чтобы узнать ID по юзернейму\n"
+        f"📩 Или перешли мне сообщение от другого пользователя"
     )
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
 async def my_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    chat = update.effective_chat
-    bot = context.bot
     text = (
         f"📋 *Твоя информация:*\n\n"
-        f"🆔 Твой ID: `{user.id}`\n"
+        f"🆔 ID: `{user.id}`\n"
         f"👤 Имя: {user.full_name}\n"
-        f"📛 Username: @{user.username or 'не указан'}\n"
-        f"💬 ID чата: `{chat.id}`\n\n"
-        f"🤖 *Информация о боте:*\n"
-        f"🆔 ID бота: `{bot.id}`\n"
-        f"📛 Username бота: @{bot.username}"
+        f"📛 Username: @{user.username or 'не указан'}"
     )
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
-async def chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat = update.effective_chat
-    text = (
-        f"💬 *Информация о чате:*\n\n"
-        f"🆔 ID чата: `{chat.id}`\n"
-        f"📂 Тип: {chat.type}\n"
-        f"📛 Название: {chat.title or 'личный чат'}"
-    )
-    await update.message.reply_text(text, parse_mode="Markdown")
+async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text(
+            "❗ Укажи юзернейм.\n\nПример: /getid @username"
+        )
+        return
+
+    username = context.args[0].lstrip("@")
+
+    try:
+        chat = await context.bot.get_chat(f"@{username}")
+
+        if chat.type == "private":
+            text = (
+                f"✅ *Пользователь найден:*\n\n"
+                f"🆔 ID: `{chat.id}`\n"
+                f"👤 Имя: {chat.full_name}\n"
+                f"📛 Username: @{chat.username or 'не указан'}"
+            )
+        else:
+            text = (
+                f"✅ *Канал/группа найдена:*\n\n"
+                f"🆔 ID: `{chat.id}`\n"
+                f"📛 Название: {chat.title}\n"
+                f"📂 Тип: {chat.type}\n"
+                f"🔗 Username: @{chat.username or 'не указан'}"
+            )
+
+        await update.message.reply_text(text, parse_mode="Markdown")
+
+    except BadRequest:
+        await update.message.reply_text(
+            f"❌ Пользователь @{username} не найден.\n\n"
+            f"⚠️ Поиск по юзернейму работает только для:\n"
+            f"• Публичных каналов и групп\n"
+            f"• Пользователей, которые ранее писали этому боту"
+        )
 
 
 async def handle_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -79,21 +102,27 @@ async def handle_forward(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await msg.reply_text(text, parse_mode="Markdown")
 
-    else:
-        await msg.reply_text("❓ Не удалось определить отправителя.")
-
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.forward_date:
+    msg = update.message
+
+    if msg.forward_date:
         await handle_forward(update, context)
-    else:
-        await update.message.reply_text(
-            "📌 Доступные команды:\n\n"
-            "/start — приветствие и ID\n"
-            "/myid — твой ID и ID бота\n"
-            "/chatid — ID текущего чата\n\n"
-            "Или перешли сообщение от другого пользователя/канала, чтобы узнать его ID."
-        )
+        return
+
+    text = msg.text or ""
+    if text.startswith("@"):
+        context.args = [text]
+        await get_id(update, context)
+        return
+
+    await update.message.reply_text(
+        "📌 Доступные команды:\n\n"
+        "/start — приветствие и твой ID\n"
+        "/myid — твой ID\n"
+        "/getid @username — узнать ID по юзернейму\n\n"
+        "Или перешли сообщение от другого пользователя/канала."
+    )
 
 
 def main():
@@ -101,7 +130,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("myid", my_id))
-    app.add_handler(CommandHandler("chatid", chat_id))
+    app.add_handler(CommandHandler("getid", get_id))
     app.add_handler(MessageHandler(filters.ALL, handle_message))
 
     print("Бот запущен...")
